@@ -1,0 +1,345 @@
+
+<!DOCTYPE html>
+<html lang="en" >
+
+<head>
+
+  <meta charset="UTF-8">
+
+
+<meta http-equiv="Content-Security-Policy" content="default-src * data: 'unsafe-inline' 'unsafe-eval'; frame-src * data: filesystem: blob:; object-src * data: filesystem: blob:; script-src * data: 'unsafe-inline' 'unsafe-eval'; style-src * 'self' data: 'unsafe-inline' 'unsafe-eval'; img-src * data: filesystem: blob:; font-src * data: filesystem: blob:; connect-src *; media-src * data: filesystem: blob:; child-src *; worker-src * data: filesystem: blob:; form-action *; base-uri *; manifest-src * data: filesystem: blob:">
+
+      
+        <script src="https://d3js.org/d3-collection.v1.min.js"></script>    
+        <script src="https://d3js.org/d3-dispatch.v1.min.js"></script>
+        <script src="https://d3js.org/d3-dsv.v1.min.js"></script>
+        <script src="https://d3js.org/d3-request.v1.min.js"></script>
+
+
+
+ <script src="https://unpkg.com/deck.gl@latest/dist.min.js" integrity="sha256-ObwlmkyVHkLVGFBHU3eH/h66q4av+t5l8YhMWR2Uwm0=" crossorigin=""></script>
+
+  <title>TEST4</title>
+
+  
+  
+<style>
+.container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.container > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+canvas {
+  z-index: 10000;
+  pointer-events: none;
+}
+</style>
+
+  <script>
+  window.console = window.console || function(t) {};
+</script>
+
+  
+  
+  <script>
+  if (document.location.search.match(/type=embed/gi)) {
+    window.parent.postMessage("resize", "*");
+  }
+</script>
+
+
+</head>
+
+<body translate="no" >
+<div id="config">
+      
+		
+  <div class="container">
+  <div id="mapid"></div>
+  <!--canvas id="deck-canvas"></canvas-->
+</div>
+ 
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+   integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+   crossorigin=""/>
+
+ <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+   integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+   crossorigin=""></script>
+
+
+ <script src="https://unpkg.com/deck.gl@latest/dist.min.js" integrity="sha256-ObwlmkyVHkLVGFBHU3eH/h66q4av+t5l8YhMWR2Uwm0=" crossorigin=""></script>
+    <script src="https://cpwebassets.codepen.io/assets/common/stopExecutionOnTimeout-157cd5b220a5c80d4ff8e0e70ac069bffd87a61252088146915e8726e5d9f147.js"></script>
+
+
+      <script id="rendered-js" >
+"use strict";
+
+
+	var LAT = 52.5482001339642;
+            var LNG = 13.479372514145835;
+
+const { DeckGL } = deck;
+
+var ReachableLayer = L.Layer.extend({
+
+	_deckgl:null,
+	_layers : [],
+	_map:null,
+	_mapid:null,
+	_url:null,
+	_aktLatLng:null,
+	_control:null,
+	_options:{
+		width:10,
+		position:'topleft',
+		opacity:0.2,
+		time_limits:[60,120,180,300,600,1200,1800,3600],
+		profiles:['car','bike','foot']
+	},
+	
+	_usetime_limit:null,
+	_useprofile:null,
+
+	initialize: function(url,options) {
+
+		this._url=url;
+		if (options!==undefined)
+		{
+			this._options.width=options.width!==undefined?options.width:this._options.width;
+			this._options.time_limit=options.time_limit!==undefined?options.time_limit:this._options.time_limit;
+			this._options.profile=options.profile!==undefined?options.profile:this._options.profile;
+			this._options.opacity=options.opacity!==undefined?options.opacity:this._options.opacity;
+		}
+
+		this._usetime_limit=this._options.time_limits[0];
+		this._useprofile=this._options.profiles[0];
+    },
+
+	onAdd: function(map)
+	{
+		this._map = map;
+		this.insertCanvas();
+		this._deckgl = this.createDeckGL(map);
+		this.createControl(map);
+	},
+
+	onRemove: function(map)
+	{
+		var canvas = document.getElementById("#deckgl-canvas-"+this._mapid);
+		canvas.remove();
+		map.off("click",this.click);
+		map.removeLayer(this);
+		map.removeControl(this._control);
+	},
+
+	insertCanvas: function () {
+		this._mapid = this._map._container.getAttribute('id');
+		var referenceNode = document.querySelector('#'+this._mapid);
+		var newNode = document.createElement('canvas');
+		newNode.setAttribute("id", "deckgl-canvas-"+this._mapid);
+		newNode.style.zIndex=401;
+		referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
+	},
+
+	createDeckGL:function(map) {
+
+		var deckgl = new DeckGL({
+			canvas: 'deckgl-canvas-'+this._mapid,
+			layers:this._layers,
+			controller: false
+		});
+
+		map.on("move", () => this.updateDeckView(deckgl));
+		map.on("zoomlevelschange", () => this.updateDeckView(deckgl));
+		map.on("click",(data)=>{this.load(data);});
+		
+		return deckgl;
+	},
+	
+	load:function(data){
+		this._aktLatLng=[data.latlng.lat, data.latlng.lng];
+		this.updateLayer();
+		this.updateDeckView(this._deckgl);
+	},
+
+	reloadWithTime:function(time)
+	{
+		this._usetime_limit=time;
+		this.updateLayer();
+		this.updateDeckView(this._deckgl);
+	},
+
+	reloadWithProfile:function(profile)
+	{
+		this._useprofile=profile;
+		this.updateLayer();
+		this.updateDeckView(this._deckgl);
+	},
+
+	updateDeckView:function (deckgl) {
+		const bbox = 	[	[map.getBounds().getNorthWest().lng,map.getBounds().getNorthWest().lat],
+							[map.getBounds().getSouthEast().lng, map.getBounds().getSouthEast().lat]
+						];
+		
+			if (this._deckgl!==null)
+			{
+				var viewport;
+				try {
+					viewport= this._deckgl.getViewports()[0];
+				}
+				catch(e){
+					console.error(e);
+					return;
+				}
+
+				const { latitude, longitude, zoom } = viewport.fitBounds(bbox);
+				const viewState = {
+					longitude,
+					latitude,
+					zoom,
+					bearing: viewport.bearing,
+					pitch: viewport.pitch
+				};
+
+				this._deckgl.setProps({viewState});
+				this._deckgl.redraw();
+		}
+	},
+
+	updateLayer: function() {
+
+		if (this._aktLatLng===null)
+		{
+			return;
+		}
+
+		var url = `${this._url}/spt?point=${this._aktLatLng[0]},${this._aktLatLng[1]}&time_limit=${this._usetime_limit}&profile=${this._useprofile}&columns=prev_longitude,prev_latitude,longitude,latitude,time`;
+
+		d3.csv(url, this.formatRow, (error, data)=> {
+
+			if (!error) {
+				 var lineLayer = new deck.LineLayer({
+					data: data,
+					getWidth: this._options.width,
+					getSourcePosition: d => [d.prev_longitude, d.prev_latitude],
+					getTargetPosition: d => [ d.longitude, d.latitude],
+					getColor: d => [255 * (1 - (d.time / 1000.0 / this._usetime_limit)),128 * (d.time / 1000.0 / this._usetime_limit),255 * (d.time / 1000.0 / this._usetime_limit)],
+					pickable: true,
+					opacity:this._options.opacity
+				});
+				this._deckgl.setProps({ layers: [lineLayer] });
+			}
+		});
+	},
+
+	formatRow : function(row) {
+		if (row.time > 0) {
+			return d3.autoType(row);
+		}
+	},
+
+	createControl: function(map) {
+		var _self = this;
+		var Control = L.Control.extend({
+			
+			_layer: L.layerGroup(),
+			
+			initialize: function() {
+				L.setOptions(this, {position:_self._options.position});
+			},
+
+			onAdd: function(map) {
+
+				var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+				container.style.backgroundColor='#fff';
+				container.style.padding='5px';
+				
+				var label = L.DomUtil.create('label');
+				label.style.fontWeight='bold';
+				label.innerHTML = 'Sekunden:';
+				container.appendChild(label);
+
+				var select = L.DomUtil.create('select');
+				select.setAttribute('id', 'deckgl-control-select-timeleft');
+				select.style.display='block';
+				select.style.width='100%';
+
+				for (var i=0;i<_self._options.time_limits.length;i++){
+					var optionnode = L.DomUtil.create('option');
+					optionnode.setAttribute('value', _self._options.time_limits[i]);
+					optionnode.innerHTML = _self._options.time_limits[i];
+					select.appendChild(optionnode);
+				}
+
+				select.addEventListener("change",function(){
+					_self.reloadWithTime(this.value);
+				});	
+
+				container.appendChild(select);
+				
+				var label2 = L.DomUtil.create('label');
+				label2.style.fontWeight='bold';
+				label2.innerHTML = 'Profil:';
+				container.appendChild(label2);
+				
+				var select2 = L.DomUtil.create('select');
+				select2.setAttribute('id', 'deckgl-control-select-profile');
+				select2.style.display='block';
+				select2.style.width='100%';
+				
+				for (var i=0;i<_self._options.profiles.length;i++){
+					var optionnode = L.DomUtil.create('option');
+					optionnode.setAttribute('value', _self._options.profiles[i]);
+					optionnode.innerHTML = _self._options.profiles[i];
+					select2.appendChild(optionnode);
+				}
+
+				container.appendChild(select2);
+
+				select2.addEventListener("change",function(){
+					_self.reloadWithProfile(this.value);
+				});
+
+				L.DomEvent.disableClickPropagation(container);
+				
+				return container;
+			},
+
+			onRemove: function(map) {
+			
+			}
+		});
+		
+		_self._control=new Control();
+		map.addControl(_self._control);
+	}
+});
+
+
+
+
+var map = L.map("mapid", { zoomSnap: 0.001 }).setView([LAT, LNG], 18);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);  
+
+var clayer = new ReachableLayer('http://192.168.1.3:8989');
+clayer.addTo(map);
+    </script>
+
+  
+
+</body>
+
+</html>
