@@ -32,11 +32,39 @@
   bottom: 0;
 }
 .container > * {
-  position: absolute;
+  position: relative;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+}
+.blink {
+    animation: fade 1000ms infinite;
+    -webkit-animation: fade 1000ms infinite;
+}
+
+@keyframes fade {
+    from {
+        opacity: 1.0;
+    }
+    50% {
+        opacity: 0.4;
+    }
+    to {
+        opacity: 1.0;
+    }
+}
+
+@-webkit-keyframes fade {
+    from {
+        opacity: 1.0;
+    }
+    50% {
+        opacity: 0.4;
+    }
+    to {
+        opacity: 1.0;
+    }
 }
 
 </style>
@@ -54,18 +82,6 @@
 </script>
 
 
-</head>
-
-<body translate="no" >
-<div id="config">
-      
-		
-  <div class="container">
-  <div id="mapid"></div>
-  <!--canvas id="deck-canvas"></canvas-->
-</div>
- 
-
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
    crossorigin=""/>
@@ -77,6 +93,15 @@
 
  <script src="https://unpkg.com/deck.gl@latest/dist.min.js" integrity="sha256-ObwlmkyVHkLVGFBHU3eH/h66q4av+t5l8YhMWR2Uwm0=" crossorigin=""></script>
     <script src="https://cpwebassets.codepen.io/assets/common/stopExecutionOnTimeout-157cd5b220a5c80d4ff8e0e70ac069bffd87a61252088146915e8726e5d9f147.js"></script>
+
+</head>
+
+<body translate="no" >
+
+<div class="container">
+  <div id="mapid"></div>
+</div>
+ 
 
 
       <script id="rendered-js" >
@@ -97,14 +122,16 @@ var ReachableLayer = L.Layer.extend({
 	_options:{
 		width:10,
 		position:'topleft',
-		opacity:0.5,
+		opacity:0.3,
 		time_limits:[60,120,180,300,600,1200,1800,3600],
 		profiles:['car','bike','foot'],
-		smooth:true
+		smooth:false,
+		blinkmarker:true
 	},
 	
 	_usetime_limit:null,
 	_useprofile:null,
+	_startmarker:null,
 
 	initialize: function(url,options) {
 
@@ -117,6 +144,7 @@ var ReachableLayer = L.Layer.extend({
 			this._options.opacity=options.opacity!==undefined?options.opacity:this._options.opacity;
 			this._options.smooth=options.smooth!==undefined?options.smooth:this._options.smooth;
 			this._options.position=options.position!==undefined?options.position:this._options.position;
+			this._options.blinkmarker=options.blinkmarker!==undefined?options.blinkmarker:this._options.blinkmarker;
 		}
 
 		this._usetime_limit=this._options.time_limits[0];
@@ -134,21 +162,40 @@ var ReachableLayer = L.Layer.extend({
 
 	onRemove: function(map)
 	{
-		var canvas = document.getElementById("#deckgl-canvas-"+this._mapid);
-		canvas.remove();
-		map.off("click",this.click);
-		map.removeLayer(this);
-		map.removeControl(this._control);
-		map.removeControl(this._legend);
+		var canvas = document.getElementsByClassName("deckgl-canvas-"+this._mapid)[0];
+		if (canvas!==undefined)
+		{
+			canvas.parentNode.removeChild(canvas);
+			var decktooltip = document.getElementsByClassName("deck-tooltip")[0];
+			if (decktooltip!==undefined)
+			{
+				decktooltip.parentNode.removeChild(decktooltip);
+			}
+			
+			if (this._startmarker!==null)
+			{
+				this._map.removeLayer(this._startmarker);
+			}
+			map.off("click",this.click);
+			map.removeLayer(this);
+			map.removeControl(this._control);
+			map.removeControl(this._legend);
+			this._startmarker=null;
+			this._legend=null;
+			this._control=null;
+		}
 	},
 
 	insertCanvas: function () {
 		this._mapid = this._map._container.getAttribute('id');
 		var referenceNode = document.querySelector('#'+this._mapid);
 		var newNode = document.createElement('canvas');
-		newNode.setAttribute("id", "deckgl-canvas-"+this._mapid);
+		var classname = "deckgl-canvas-"+this._mapid;
+		newNode.setAttribute('id',classname);
+		newNode.classList.add(classname);
 		newNode.style.zIndex=401;
 		newNode.style.pointerEvents='none';
+		newNode.style.position='relative';
 		referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
 	},
 
@@ -292,6 +339,37 @@ var ReachableLayer = L.Layer.extend({
 
             return res;
         },
+		
+	setMarker:function() {
+		if (this._startmarker!==null)
+		{
+			this._map.removeLayer(this._startmarker);
+		}
+
+	
+		var iconb64='data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iaXNvLTg4NTktMSI/Pg0KPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDE5LjAuMCwgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDYuMDAgQnVpbGQgMCkgIC0tPg0KPHN2ZyB2ZXJzaW9uPSIxLjEiIGlkPSJDYXBhXzEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHg9IjBweCIgeT0iMHB4Ig0KCSB2aWV3Qm94PSIwIDAgNDY4LjI5MyA0NjguMjkzIiBzdHlsZT0iZW5hYmxlLWJhY2tncm91bmQ6bmV3IDAgMCA0NjguMjkzIDQ2OC4yOTM7IiB4bWw6c3BhY2U9InByZXNlcnZlIj4NCjxwb2x5Z29uIHN0eWxlPSJmaWxsOiNFMUU2RTk7IiBwb2ludHM9IjIxNS4wMTcsMjE1LjIwNiAyMTUuMDE3LDQzOS41OTkgMjM0LjE0Niw0NjguMjkzIDIzNC4xNDYsMjE1LjIwNiAiLz4NCjxwb2x5Z29uIHN0eWxlPSJmaWxsOiNENUQ2REI7IiBwb2ludHM9IjIzNC4xNDYsMjE1LjIwNiAyMzQuMTQ2LDQ2OC4yOTMgMjUzLjI3Niw0MzkuNTk5IDI1My4yNzYsMjE1LjIwNiAiLz4NCjxwYXRoIHN0eWxlPSJmaWxsOiNEMTUyNDE7IiBkPSJNMzQ0LjE0MSwxMDkuOTk0YzAsNjAuNzg0LTQ5LjI1OCwxMDkuOTk0LTEwOS45OTQsMTA5Ljk5NGMtNTAuODM2LDAtOTMuNjM5LTM0LjQ4MS0xMDYuMjE2LTgxLjM0OA0KCWMtMi40ODctOS4xMzQtMy43NzgtMTguNjk5LTMuNzc4LTI4LjY0NkMxMjQuMTUyLDQ5LjI1OCwxNzMuNDEsMCwyMzQuMTQ2LDBjMzQuMDUsMCw2NC40NjYsMTUuNDQ3LDg0LjYsMzkuNzQxDQoJQzMzNC42MjQsNTguNzc1LDM0NC4xNDEsODMuMzA5LDM0NC4xNDEsMTA5Ljk5NHoiLz4NCjxwYXRoIHN0eWxlPSJmaWxsOiNFNTYzNTM7IiBkPSJNMzIyLjUyNCw2OC4zNGMwLDYwLjczNi00OS4yNTgsMTA5Ljk5NC0xMDkuOTk0LDEwOS45OTRjLTM0LjA1LDAtNjQuNDE4LTE1LjQ0Ny04NC42LTM5LjY5NA0KCWMtMi40ODctOS4xMzQtMy43NzgtMTguNjk5LTMuNzc4LTI4LjY0NkMxMjQuMTUyLDQ5LjI1OCwxNzMuNDEsMCwyMzQuMTQ2LDBjMzQuMDUsMCw2NC40NjYsMTUuNDQ3LDg0LjYsMzkuNzQxDQoJQzMyMS4yMzMsNDguODc2LDMyMi41MjQsNTguNDQxLDMyMi41MjQsNjguMzR6Ii8+DQo8cGF0aCBzdHlsZT0iZmlsbDojRTFFNkU5OyIgZD0iTTI2My4wNzksNTEuNDZjMC44OTUtOC4wNTgtNS4yMjctMTUuMjg2LTEzLjE4LTE2Ljg2Yy0xOS4zMy0zLjgyNS02Ni40NjUtNy4yMTQtODcuMTk0LDQzLjg1OQ0KCWMwLDAtNS4wNTQsMTMuMTQyLDkuNDc3LDExLjQ5OWM3LjAwMy0wLjc5MiwxMy4yNjItNC42MzksMTcuNjctMTAuMTM4YzcuMTU4LTguOTMxLDI0LjE0NS0yMy40NzEsNTUuNzIzLTE2LjYwMQ0KCWM3LjQxNSwxLjYxMywxNS4zMzEtMi40ODEsMTcuMTYzLTkuODQ1QzI2Mi44ODksNTIuNzYyLDI2My4wMDUsNTIuMTI0LDI2My4wNzksNTEuNDZ6Ii8+DQo8Zz4NCjwvZz4NCjxnPg0KPC9nPg0KPGc+DQo8L2c+DQo8Zz4NCjwvZz4NCjxnPg0KPC9nPg0KPGc+DQo8L2c+DQo8Zz4NCjwvZz4NCjxnPg0KPC9nPg0KPGc+DQo8L2c+DQo8Zz4NCjwvZz4NCjxnPg0KPC9nPg0KPGc+DQo8L2c+DQo8Zz4NCjwvZz4NCjxnPg0KPC9nPg0KPGc+DQo8L2c+DQo8L3N2Zz4NCg==';
+		
+		var Icon = L.Icon.extend({
+        options: {
+				iconUrl: iconb64,
+				class:'blink',
+				shadowUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACkAAAApCAQAAAACach9AAACMUlEQVR4Ae3ShY7jQBAE0Aoz/f9/HTMzhg1zrdKUrJbdx+Kd2nD8VNudfsL/Th///dyQN2TH6f3y/BGpC379rV+S+qqetBOxImNQXL8JCAr2V4iMQXHGNJxeCfZXhSRBcQMfvkOWUdtfzlLgAENmZDcmo2TVmt8OSM2eXxBp3DjHSMFutqS7SbmemzBiR+xpKCNUIRkdkkYxhAkyGoBvyQFEJEefwSmmvBfJuJ6aKqKWnAkvGZOaZXTUgFqYULWNSHUckZuR1HIIimUExutRxwzOLROIG4vKmCKQt364mIlhSyzAf1m9lHZHJZrlAOMMztRRiKimp/rpdJDc9Awry5xTZCte7FHtuS8wJgeYGrex28xNTd086Dik7vUMscQOa8y4DoGtCCSkAKlNwpgNtphjrC6MIHUkR6YWxxs6Sc5xqn222mmCRFzIt8lEdKx+ikCtg91qS2WpwVfBelJCiQJwvzixfI9cxZQWgiSJelKnwBElKYtDOb2MFbhmUigbReQBV0Cg4+qMXSxXSyGUn4UbF8l+7qdSGnTC0XLCmahIgUHLhLOhpVCtw4CzYXvLQWQbJNmxoCsOKAxSgBJno75avolkRw8iIAFcsdc02e9iyCd8tHwmeSSoKTowIgvscSGZUOA7PuCN5b2BX9mQM7S0wYhMNU74zgsPBj3HU7wguAfnxxjFQGBE6pwN+GjME9zHY7zGp8wVxMShYX9NXvEWD3HbwJf4giO4CFIQxXScH1/TM+04kkBiAAAAAElFTkSuQmCC",
+				iconSize: [41, 41], // size of the icon
+				shadowSize: [41, 41], // size of the shadow
+				iconAnchor: [20, 41], // point of the icon which will correspond to marker's location
+				shadowAnchor: [14, 41]
+			}
+		});
+
+		this._startmarker = L.marker([this._aktLatLng[0], this._aktLatLng[1]], {icon: new Icon});
+
+		this._startmarker.addTo(this._map);
+
+		if (this._options.blinkmarker)
+		{
+			L.DomUtil.addClass(this._startmarker._icon, 'blink');
+		}
+	},
 
 	updateLayer: function() {
 
@@ -299,7 +377,7 @@ var ReachableLayer = L.Layer.extend({
 		{
 			return;
 		}
-
+		this.setMarker();
 		var url = `${this._url}/spt?point=${this._aktLatLng[0]},${this._aktLatLng[1]}&time_limit=${this._usetime_limit}&profile=${this._useprofile}&columns=prev_longitude,prev_latitude,longitude,latitude,time`;
 
 		d3.csv(url, this.formatRow, (error, data)=> {
@@ -311,7 +389,7 @@ var ReachableLayer = L.Layer.extend({
 					getWidth: this._options.width,
 					getSourcePosition: d => [d.prev_longitude, d.prev_latitude],
 					getTargetPosition: d => [ d.longitude, d.latitude],
-					getColor: d => {							
+					getColor: d => {
 							return this.calculateColor(Math.floor(d.time/1000),this._usetime_limit);
 						},
 					pickable: true,
@@ -470,12 +548,34 @@ var ReachableLayer = L.Layer.extend({
 
 
 var map = L.map("mapid", { zoomSnap: 0.001 }).setView([52.5, 13.4], 18);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+var osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);  
 
+    
+
+
+
 var clayer = new ReachableLayer('http://192.168.1.3:8989');
 clayer.addTo(map);
+
+
+let baseMaps = {
+            'OSM':osm
+        };
+
+       var overlayMaps = {
+                "ReachableLayer": clayer
+            };
+          
+        
+            L.control.layers(baseMaps, overlayMaps).addTo(map);
+            L.control.scale().addTo(map);
+
+
+
+
+
     </script>
 
 
