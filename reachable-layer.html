@@ -126,12 +126,15 @@ var ReachableLayer = L.Layer.extend({
 		time_limits:[60,120,180,300,600,1200,1800,3600],
 		profiles:['car','bike','foot'],
 		smooth:false,
-		blinkmarker:true
+		blinkmarker:true,
+		useiso:false,
+		usespt:true
 	},
 	
 	_usetime_limit:null,
 	_useprofile:null,
 	_startmarker:null,
+	_isolayer:null,
 
 	initialize: function(url,options) {
 
@@ -145,6 +148,8 @@ var ReachableLayer = L.Layer.extend({
 			this._options.smooth=options.smooth!==undefined?options.smooth:this._options.smooth;
 			this._options.position=options.position!==undefined?options.position:this._options.position;
 			this._options.blinkmarker=options.blinkmarker!==undefined?options.blinkmarker:this._options.blinkmarker;
+			this._options.useiso=options.useiso!==undefined?options.useiso:this._options.useiso;
+			this._options.usespt=options.usespt!==undefined?options.usespt:this._options.usespt;
 		}
 
 		this._usetime_limit=this._options.time_limits[0];
@@ -158,6 +163,9 @@ var ReachableLayer = L.Layer.extend({
 		this._deckgl = this.createDeckGL(map);
 		this.createControl(map);
 		this.createLegend(map);
+
+		this._isolayer=L.layerGroup();
+		this._isolayer.addTo(this._map);
 	},
 
 	onRemove: function(map)
@@ -178,11 +186,13 @@ var ReachableLayer = L.Layer.extend({
 			}
 			map.off("click",this.click);
 			map.removeLayer(this);
+			map.removeLayer(this._isolayer);
 			map.removeControl(this._control);
 			map.removeControl(this._legend);
 			this._startmarker=null;
 			this._legend=null;
 			this._control=null;
+			this._isolayer=null;
 		}
 	},
 
@@ -378,26 +388,103 @@ var ReachableLayer = L.Layer.extend({
 			return;
 		}
 		this.setMarker();
-		var url = `${this._url}/spt?point=${this._aktLatLng[0]},${this._aktLatLng[1]}&time_limit=${this._usetime_limit}&profile=${this._useprofile}&columns=prev_longitude,prev_latitude,longitude,latitude,time`;
+		this._isolayer.clearLayers();
+		this._deckgl.setProps({ layers: [] });
 
-		d3.csv(url, this.formatRow, (error, data)=> {
+		if (this._options.usespt)
+		{
+			var url = `${this._url}/spt?point=${this._aktLatLng[0]},${this._aktLatLng[1]}&time_limit=${this._usetime_limit}&profile=${this._useprofile}&columns=prev_longitude,prev_latitude,longitude,latitude,time`;
 
-			if (!error) {
+			d3.csv(url, this.formatRow, (error, data)=> {
 
-				 var lineLayer = new deck.LineLayer({
-					data: data,
-					getWidth: this._options.width,
-					getSourcePosition: d => [d.prev_longitude, d.prev_latitude],
-					getTargetPosition: d => [ d.longitude, d.latitude],
-					getColor: d => {
-							return this.calculateColor(Math.floor(d.time/1000),this._usetime_limit);
-						},
-					pickable: true,
-					opacity:this._options.opacity
+				if (!error) {
+
+					 var lineLayer = new deck.LineLayer({
+						data: data,
+						getWidth: this._options.width,
+						getSourcePosition: d => [d.prev_longitude, d.prev_latitude],
+						getTargetPosition: d => [ d.longitude, d.latitude],
+						getColor: d => {
+								return this.calculateColor(Math.floor(d.time/1000),this._usetime_limit);
+							},
+						pickable: true,
+						opacity:this._options.opacity
+					});
+					this._deckgl.setProps({ layers: [lineLayer] });
+				}
+			});
+		}
+		
+		if (this._options.useiso)
+		{
+			var _self = this;
+			var url2 = `${this._url}/isochrone?point=${this._aktLatLng[0]},${this._aktLatLng[1]}&time_limit=${this._usetime_limit}&profile=${this._useprofile}&buckets=10`;
+
+			var xhttp = new XMLHttpRequest ();
+			
+			var reverseArray = function (array) {
+				var newarray = array.slice();
+				return newarray.map(function reverse(item) {
+					var newarr = item.slice();
+					return Array.isArray(newarr) && Array.isArray(newarr[0]) ?
+						newarr.map(reverse) :
+						newarr.reverse();
 				});
-				this._deckgl.setProps({ layers: [lineLayer] });
 			}
-		});
+
+			var arrToHex=function(arr) {
+				let s = '#';
+				for (let i = 0; i < arr.length; i++) {
+					s += ((arr[i] / 16) | 0).toString(16);
+					s += ((arr[i] % 16) | 0).toString(16);
+				}
+				return s;
+			}
+
+			xhttp.onreadystatechange = function() {
+			  if (this.readyState == 4 && this.status == 200) {
+				var data = JSON.parse(this.responseText);
+
+				if (data.polygons!==undefined)
+				{
+					for (var n=0;n<data.polygons.length;n++)
+					{
+						var time = _self._usetime_limit / data.polygons.length*(n+1);
+
+						var colorrgb = _self.calculateColor(n, data.polygons.length);
+						var color = arrToHex(colorrgb);
+
+						 if (n == 0) {
+							var coords = reverseArray(data.polygons[n].geometry.coordinates);
+
+							L.polygon([coords], {
+								fillColor: color,
+								weight: 1,
+								color: color,
+								fillOpacity:0.1
+							}).bindPopup(time + " Sek. erreichbar.").addTo(_self._isolayer);
+						} else {
+							var coords = reverseArray(data.polygons[n].geometry.coordinates);
+							var coords_hole = reverseArray(data.polygons[n - 1].geometry.coordinates);
+							
+							L.polygon([coords, coords_hole], {
+								fillColor: color,
+								weight: 1,
+								color: color,
+								fillOpacity:0.1
+							}).bindPopup(time + " Sek. erreichbar.").addTo(_self._isolayer);
+						}
+					}
+				}
+				else
+				{
+					console.error(this.responseText);
+				}
+			  }
+			};
+			xhttp.open("GET", url2, true);
+			xhttp.send();
+		}
 	},
 
 	formatRow : function(row) {
@@ -530,6 +617,42 @@ var ReachableLayer = L.Layer.extend({
 
 				select2.addEventListener("change",function(){
 					_self.reloadWithProfile(this.value);
+				});
+				
+				var label3 = L.DomUtil.create('label');
+				label3.style.fontWeight='bold';
+				label3.innerHTML = 'Straßen:';
+				label3.style.display='block';
+				label3.style.width='100%';
+				container.appendChild(label3);
+				
+				var chbox1 = L.DomUtil.create('input');
+				chbox1.setAttribute('id', 'deckgl-control-chbox-spt');
+				chbox1.setAttribute('type', 'checkbox');
+				chbox1.checked=_self._options.usespt;
+				label3.appendChild(chbox1);
+
+				chbox1.addEventListener("change",function(){
+					_self._options.usespt=this.checked;
+					_self.reloadWithProfile(_self._useprofile);
+				});
+				
+				var label4 = L.DomUtil.create('label');
+				label4.style.fontWeight='bold';
+				label4.innerHTML = 'Isochrone:';
+				label4.style.display='block';
+				label4.style.width='100%';
+				container.appendChild(label4);
+				
+				var chbox2 = L.DomUtil.create('input');
+				chbox2.setAttribute('id', 'deckgl-control-chbox-iso');
+				chbox2.setAttribute('type', 'checkbox');
+				chbox2.checked=_self._options.useiso;
+				label4.appendChild(chbox2);
+
+				chbox2.addEventListener("change",function(){
+					_self._options.useiso=this.checked;
+					_self.reloadWithProfile(_self._useprofile);
 				});
 
 				L.DomEvent.disableClickPropagation(container);
