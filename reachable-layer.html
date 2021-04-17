@@ -99,7 +99,8 @@ var ReachableLayer = L.Layer.extend({
 		position:'topleft',
 		opacity:0.5,
 		time_limits:[60,120,180,300,600,1200,1800,3600],
-		profiles:['car','bike','foot']
+		profiles:['car','bike','foot'],
+		smooth:true
 	},
 	
 	_usetime_limit:null,
@@ -114,6 +115,8 @@ var ReachableLayer = L.Layer.extend({
 			this._options.time_limit=options.time_limit!==undefined?options.time_limit:this._options.time_limit;
 			this._options.profile=options.profile!==undefined?options.profile:this._options.profile;
 			this._options.opacity=options.opacity!==undefined?options.opacity:this._options.opacity;
+			this._options.smooth=options.smooth!==undefined?options.smooth:this._options.smooth;
+			this._options.position=options.position!==undefined?options.position:this._options.position;
 		}
 
 		this._usetime_limit=this._options.time_limits[0];
@@ -232,26 +235,60 @@ var ReachableLayer = L.Layer.extend({
 	   calculateColor: function(aktuell, max) {
             var prozent = aktuell * 100 / max;
             var res = null;
-            if (prozent >= 50) {
-                //GELB ZU ROT
-                //ROT = 255 0 0 GELB = 255 255 0
-                var r = 255;
-                var g = 255;
+			if (!this._options.smooth)
+			{
+				if (prozent<=20)
+				{
+					res = [0 , 200 , 0];
+				}
+				else
+				if (prozent<=35)
+				{
+					res = [128 , 255 , 0];
+				}
+				else
+				if (prozent<=50)
+				{
+					res = [255 , 255 , 0];
+				}
+				else
+				if (prozent<=65)
+				{
+					res = [255 , 200 , 0];
+				}
+				else
+				if (prozent<=80)
+				{
+					res = [255 , 175 , 0];
+				}
+				else
+				{
+					res = [200 , 0 , 0];
+				}
+			}
+			else
+			{
+				if (prozent >= 50) {
+					//GELB ZU ROT
+					//ROT = 255 0 0 GELB = 255 255 0
+					var r = 255;
+					var g = 255;
 
-                var neuprozent = (prozent - 50) / 50 * 100;
-                g = Math.floor(255 - (255 * neuprozent / 100));
-                res = [255 , g , 0];
+					var neuprozent = (prozent - 50) / 50 * 100;
+					g = Math.floor(255 - (255 * neuprozent / 100));
+					res = [255 , g , 0];
 
-            } else {
-                //GRÜN ZU GELB
-                //GRÜN = 0 255 0 // GELB = 255 255 0 
-                var r = 0;
-                var g = 255;
+				} else {
+					//GRÜN ZU GELB
+					//GRÜN = 0 255 0 // GELB = 255 255 0 
+					var r = 0;
+					var g = 255;
 
-                var neuprozent = (prozent) / 50 * 100;
-                r = Math.floor(255 * neuprozent / 100);
-				res = [r , 200 , 0];
-            }
+					var neuprozent = (prozent) / 50 * 100;
+					r = Math.floor(255 * neuprozent / 100);
+					res = [r , 255 , 0];
+				}
+			}
 
             return res;
         },
@@ -274,8 +311,7 @@ var ReachableLayer = L.Layer.extend({
 					getWidth: this._options.width,
 					getSourcePosition: d => [d.prev_longitude, d.prev_latitude],
 					getTargetPosition: d => [ d.longitude, d.latitude],
-					getColor: d => {
-							//return [255 * (1 - (tmptime / this._usetime_limit)),128 * (tmptime/ this._usetime_limit),255 * (tmptime / this._usetime_limit)]
+					getColor: d => {							
 							return this.calculateColor(Math.floor(d.time/1000),this._usetime_limit);
 						},
 					pickable: true,
