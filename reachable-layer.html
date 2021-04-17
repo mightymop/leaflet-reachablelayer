@@ -38,10 +38,7 @@
   width: 100%;
   height: 100%;
 }
-canvas {
-  z-index: 10000;
-  pointer-events: none;
-}
+
 </style>
 
   <script>
@@ -85,10 +82,6 @@ canvas {
       <script id="rendered-js" >
 "use strict";
 
-
-	var LAT = 52.5482001339642;
-            var LNG = 13.479372514145835;
-
 const { DeckGL } = deck;
 
 var ReachableLayer = L.Layer.extend({
@@ -100,10 +93,11 @@ var ReachableLayer = L.Layer.extend({
 	_url:null,
 	_aktLatLng:null,
 	_control:null,
+	_legend:null,
 	_options:{
 		width:10,
 		position:'topleft',
-		opacity:0.2,
+		opacity:0.5,
 		time_limits:[60,120,180,300,600,1200,1800,3600],
 		profiles:['car','bike','foot']
 	},
@@ -132,6 +126,7 @@ var ReachableLayer = L.Layer.extend({
 		this.insertCanvas();
 		this._deckgl = this.createDeckGL(map);
 		this.createControl(map);
+		this.createLegend(map);
 	},
 
 	onRemove: function(map)
@@ -141,6 +136,7 @@ var ReachableLayer = L.Layer.extend({
 		map.off("click",this.click);
 		map.removeLayer(this);
 		map.removeControl(this._control);
+		map.removeControl(this._legend);
 	},
 
 	insertCanvas: function () {
@@ -149,6 +145,7 @@ var ReachableLayer = L.Layer.extend({
 		var newNode = document.createElement('canvas');
 		newNode.setAttribute("id", "deckgl-canvas-"+this._mapid);
 		newNode.style.zIndex=401;
+		newNode.style.pointerEvents='none';
 		referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
 	},
 
@@ -157,12 +154,27 @@ var ReachableLayer = L.Layer.extend({
 		var deckgl = new DeckGL({
 			canvas: 'deckgl-canvas-'+this._mapid,
 			layers:this._layers,
-			controller: false
+			controller: false,
+			viewState: {
+					longitude: map.getCenter().lng,
+					latitude:map.getCenter().lat,
+					zoom: map.getZoom(),
+			   	    maxZoom: map.getMaxZoom(),
+					bearing: 0
+			}
 		});
 
-		map.on("move", () => this.updateDeckView(deckgl));
-		map.on("zoomlevelschange", () => this.updateDeckView(deckgl));
-		map.on("click",(data)=>{this.load(data);});
+		map.on("move", () =>{
+			this.updateDeckView(deckgl);
+		});
+		
+		map.on("zoomlevelschange", () => {
+			this.updateDeckView(deckgl);
+		});
+		
+		map.on("click",(data)=>{
+			this.load(data);}
+		);
 		
 		return deckgl;
 	},
@@ -217,6 +229,33 @@ var ReachableLayer = L.Layer.extend({
 		}
 	},
 
+	   calculateColor: function(aktuell, max) {
+            var prozent = aktuell * 100 / max;
+            var res = null;
+            if (prozent >= 50) {
+                //GELB ZU ROT
+                //ROT = 255 0 0 GELB = 255 255 0
+                var r = 255;
+                var g = 255;
+
+                var neuprozent = (prozent - 50) / 50 * 100;
+                g = Math.floor(255 - (255 * neuprozent / 100));
+                res = [255 , g , 0];
+
+            } else {
+                //GRÜN ZU GELB
+                //GRÜN = 0 255 0 // GELB = 255 255 0 
+                var r = 0;
+                var g = 255;
+
+                var neuprozent = (prozent) / 50 * 100;
+                r = Math.floor(255 * neuprozent / 100);
+				res = [r , 200 , 0];
+            }
+
+            return res;
+        },
+
 	updateLayer: function() {
 
 		if (this._aktLatLng===null)
@@ -229,12 +268,16 @@ var ReachableLayer = L.Layer.extend({
 		d3.csv(url, this.formatRow, (error, data)=> {
 
 			if (!error) {
+
 				 var lineLayer = new deck.LineLayer({
 					data: data,
 					getWidth: this._options.width,
 					getSourcePosition: d => [d.prev_longitude, d.prev_latitude],
 					getTargetPosition: d => [ d.longitude, d.latitude],
-					getColor: d => [255 * (1 - (d.time / 1000.0 / this._usetime_limit)),128 * (d.time / 1000.0 / this._usetime_limit),255 * (d.time / 1000.0 / this._usetime_limit)],
+					getColor: d => {
+							//return [255 * (1 - (tmptime / this._usetime_limit)),128 * (tmptime/ this._usetime_limit),255 * (tmptime / this._usetime_limit)]
+							return this.calculateColor(Math.floor(d.time/1000),this._usetime_limit);
+						},
 					pickable: true,
 					opacity:this._options.opacity
 				});
@@ -249,11 +292,71 @@ var ReachableLayer = L.Layer.extend({
 		}
 	},
 
+	createLegend:function(map) {
+		var _self = this;
+		var Legend = L.Control.extend({
+			
+			initialize: function() {
+				L.setOptions(this, {position:'bottomright'});
+			},
+
+			onAdd: function(map) {
+
+				var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+				container.style.backgroundColor='#fff';
+				container.style.padding='2px';
+				container.style.marginBottom='5px';
+				container.style.marginRight='5px';
+				container.style.width='200px';
+
+
+				var container2 = L.DomUtil.create('div');
+				container.appendChild(container2);
+
+				var label = L.DomUtil.create('div');
+				label.style.fontWeight='bold';
+				label.innerHTML = '0';
+				label.style.textAlign='left';
+				container2.appendChild(label);
+				label.style.width='25%';
+				label.style.display='inline-block';
+				
+				var label2 = L.DomUtil.create('div');
+				label2.style.fontWeight='bold';
+				label2.innerHTML = 'Sekunden';
+				container2.appendChild(label2);
+				label2.style.textAlign='center';
+				label2.style.width='50%';
+				label2.style.display='inline-block';
+
+				var label3 = L.DomUtil.create('div');
+				label3.style.fontWeight='bold';
+				label3.innerHTML = _self._usetime_limit;
+				container2.appendChild(label3);
+				label3.style.textAlign='right';
+				label3.style.width='25%';
+				label3.style.display='inline-block';
+
+				var gradientdiv = L.DomUtil.create('div');
+				gradientdiv.style.width='200px';
+				gradientdiv.style.height='10px';
+				gradientdiv.style.background = 'linear-gradient(90deg, rgba(0,255,0,1) 0%, rgba(255,255,0,1) 50%, rgba(255,0,0,1) 100%)';
+				container.appendChild(gradientdiv);
+
+				L.DomEvent.disableClickPropagation(container);
+				
+				return container;
+			},
+
+		});
+		
+		_self._legend=new Legend();
+		map.addControl(_self._legend);
+	},
+
 	createControl: function(map) {
 		var _self = this;
 		var Control = L.Control.extend({
-			
-			_layer: L.layerGroup(),
 			
 			initialize: function() {
 				L.setOptions(this, {position:_self._options.position});
@@ -316,11 +419,8 @@ var ReachableLayer = L.Layer.extend({
 				return container;
 			},
 
-			onRemove: function(map) {
-			
-			}
 		});
-		
+
 		_self._control=new Control();
 		map.addControl(_self._control);
 	}
@@ -329,7 +429,7 @@ var ReachableLayer = L.Layer.extend({
 
 
 
-var map = L.map("mapid", { zoomSnap: 0.001 }).setView([LAT, LNG], 18);
+var map = L.map("mapid", { zoomSnap: 0.001 }).setView([52.5, 13.4], 18);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);  
@@ -338,7 +438,6 @@ var clayer = new ReachableLayer('http://192.168.1.3:8989');
 clayer.addTo(map);
     </script>
 
-  
 
 </body>
 
