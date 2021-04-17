@@ -331,6 +331,7 @@ var ReachableLayer = L.Layer.extend({
 
 				var label3 = L.DomUtil.create('div');
 				label3.style.fontWeight='bold';
+				label3.setAttribute('id','id-deckgl-legend-time-max');
 				label3.innerHTML = _self._usetime_limit;
 				container2.appendChild(label3);
 				label3.style.textAlign='right';
@@ -387,6 +388,9 @@ var ReachableLayer = L.Layer.extend({
 
 				select.addEventListener("change",function(){
 					_self.reloadWithTime(this.value);
+
+					var elem = document.querySelector('#id-deckgl-legend-time-max');
+					elem.innerHTML=this.value;
 				});	
 
 				container.appendChild(select);
