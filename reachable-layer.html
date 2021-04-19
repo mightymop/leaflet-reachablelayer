@@ -622,7 +622,7 @@ var ReachableLayer = L.Layer.extend({
 				var label3 = L.DomUtil.create('label');
 				label3.style.fontWeight='bold';
 				label3.innerHTML = 'Straßen:';
-				label3.style.display='block';
+				label3.style.display='inline-block';
 				label3.style.width='100%';
 				container.appendChild(label3);
 				
@@ -630,6 +630,7 @@ var ReachableLayer = L.Layer.extend({
 				chbox1.setAttribute('id', 'deckgl-control-chbox-spt');
 				chbox1.setAttribute('type', 'checkbox');
 				chbox1.checked=_self._options.usespt;
+				chbox1.style.float='right';
 				label3.appendChild(chbox1);
 
 				chbox1.addEventListener("change",function(){
@@ -648,6 +649,7 @@ var ReachableLayer = L.Layer.extend({
 				chbox2.setAttribute('id', 'deckgl-control-chbox-iso');
 				chbox2.setAttribute('type', 'checkbox');
 				chbox2.checked=_self._options.useiso;
+				chbox2.style.float='right';
 				label4.appendChild(chbox2);
 
 				chbox2.addEventListener("change",function(){
